@@ -481,7 +481,8 @@ daily_stock_analysis/
 >   - `AnalysisReport.details.concept_rankings` = 结构化报告详情中的概念/题材涨跌榜（用于前端关联板块信号匹配，以及通知表格按类型区分行业/概念）。
 > - 板块涨跌榜使用数据源顺序：与全局 priority 一致。
 > - 超时控制为 `best-effort` 软超时：阶段会按预算快速降级继续执行，但不保证硬中断底层三方调用。
-> - `FUNDAMENTAL_STAGE_TIMEOUT_SECONDS=8.0` 表示新增基本面阶段的目标预算，不是严格硬 SLA；Windows、Docker 或免费数据源被限流时可继续调高到 `12-15s`。
+> - `FUNDAMENTAL_STAGE_TIMEOUT_SECONDS=8.0` 表示新增基本面阶段的目标预算，不是严格硬 SLA；Windows、Docker 或免费数据源被限流时可按实际耗时调高。若财报聚合在默认预算下超时，可先尝试阶段预算 `45.0` 秒、单能力调用预算 `25.0` 秒，再根据日志调整；预算增加不能修复接口连接失败或数据缺失。
+> - GitHub Actions 支持在 Settings → Secrets and variables → Actions → Variables 设置 `FUNDAMENTAL_STAGE_TIMEOUT_SECONDS` 与 `FUNDAMENTAL_FETCH_TIMEOUT_SECONDS`；同名 Repository Secret 作为回退，未配置时均保持 `8.0` 秒。修改工作流后应发起一次新的运行验证，重跑旧提交仍使用旧工作流。
 > - 若要硬 SLA，请在后续版本升级为子进程隔离执行并在超时后强制终止。
 
 ### 其他配置
