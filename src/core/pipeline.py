@@ -37,6 +37,7 @@ from src.analyzer import (
     normalize_chip_structure_availability,
     populate_decision_action_fields,
     stabilize_decision_with_structure,
+    apply_news_verification_guard,
 )
 from src.notification import NotificationService, NotificationChannel
 from src.schemas.decision_action import normalize_decision_action
@@ -686,6 +687,7 @@ class StockAnalysisPipeline:
                 market=market or "cn",
             )
             news_result_count: Optional[int] = None
+            intel_results = {}
             self._emit_progress(46, f"{stock_name}：正在检索新闻与舆情")
             if self.search_service is not None and self.search_service.is_available:
                 logger.info(f"{stock_name}({code}) 开始多维度情报搜索...")
@@ -786,6 +788,7 @@ class StockAnalysisPipeline:
                 portfolio_context=portfolio_context,
             )
             enhanced_context["market_phase_context"] = market_phase_context_dict
+            enhanced_context["news_verification"] = SearchService.build_intel_verification(code, stock_name, intel_results)
             self._attach_daily_market_context(
                 enhanced_context,
                 daily_market_context,
@@ -860,6 +863,7 @@ class StockAnalysisPipeline:
                         social_evidence_context,
                         persisted_intelligence_context,
                     )
+                    apply_news_verification_guard(result, enhanced_context["news_verification"])
                 record_llm_run(
                     success=bool(result and getattr(result, "success", True)),
                     model=getattr(result, "model_used", None) if result else None,
