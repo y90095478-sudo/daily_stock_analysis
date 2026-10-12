@@ -405,7 +405,8 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 >   - `AnalysisReport.details.concept_rankings` = concept/theme leaderboard in structured report details for Web related-board signal matching and notification table type labels.
 > - **Sector leaderboard** uses a fixed fallback order: consistent with global priority.
 > - **Timeout control** is a `best-effort` soft timeout: the stage will quickly degrade and continue execution based on the budget, but does not guarantee a hard interrupt of underlying third-party network calls.
-> - `FUNDAMENTAL_STAGE_TIMEOUT_SECONDS=8.0` indicates the target budget for the newly added fundamental stage, not a strict hard SLA; Windows, Docker, or rate-limited free data sources can raise it to `12-15s`.
+> - `FUNDAMENTAL_STAGE_TIMEOUT_SECONDS=8.0` is the target budget for the fundamental stage, not a strict hard SLA. Adjust it to observed latency on Windows, Docker, or slow free sources. If financial aggregation times out, try a `45.0`-second stage budget and a `25.0`-second fetch budget, then tune using logs. Larger budgets cannot resolve connection failures or missing data.
+> - GitHub Actions accepts `FUNDAMENTAL_STAGE_TIMEOUT_SECONDS` and `FUNDAMENTAL_FETCH_TIMEOUT_SECONDS` in Settings → Secrets and variables → Actions → Variables, with same-name Repository Secrets as a fallback. Both retain the `8.0`-second default when unset. Start a new run after updating the workflow; rerunning an old commit still uses its old workflow.
 > - For a hard SLA, please upgrade to isolated child process execution in future versions to forcefully terminate timeout tasks.
 
 ### Other Configuration
