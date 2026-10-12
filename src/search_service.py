@@ -1024,7 +1024,14 @@ class BochaSearchProvider(BaseSearchProvider):
     def __init__(self, api_keys: List[str]):
         super().__init__(api_keys, "Bocha")
     
-    def _do_search(self, query: str, api_key: str, max_results: int, days: int = 7) -> SearchResponse:
+    def search(self, query: str, max_results: int = 5, days: int = 7,
+               *, include_domains: Optional[List[str]] = None) -> SearchResponse:
+        kwargs = {"include_domains": include_domains} if include_domains else {}
+        return self._execute_search(query, max_results=max_results, days=days,
+                                    **kwargs)
+
+    def _do_search(self, query: str, api_key: str, max_results: int, days: int = 7,
+                   include_domains: Optional[List[str]] = None) -> SearchResponse:
         """执行博查搜索"""
         try:
             import requests
@@ -1065,6 +1072,8 @@ class BochaSearchProvider(BaseSearchProvider):
                 "summary": True,  # 启用AI摘要
                 "count": min(max_results, 50)  # 最大50条
             }
+            if include_domains:
+                payload["include"] = ",".join(include_domains)
             
             # 执行搜索（带瞬时 SSL/网络错误重试）
             response = _post_with_retry(url, headers=headers, json=payload, timeout=10)
@@ -3425,6 +3434,46 @@ class SearchService:
         )
 
     @classmethod
+    def _is_quote_page(cls, item: SearchResult) -> bool:
+        """Reject instrument quote/detail pages, while retaining news on the same sites."""
+        parsed = urlparse(item.url or "")
+        host, path = (parsed.hostname or "").lower(), parsed.path.lower().rstrip("/")
+        quote_paths = {
+            "q.stock.sohu.com": r"/cn/\d{6}(?:/.*)?",
+            "quote.eastmoney.com": r"/(?:sh|sz|bj)?\d{6}\.html",
+            "gu.qq.com": r"/(?:sh|sz|hk)?[a-z0-9.]+",
+            "finance.sina.com.cn": r"/realstock/company/[^/]+/(?:nc|index)\.shtml",
+            "finance.yahoo.com": r"/quote/[^/]+(?:/(?:news|history|financials|analysis|profile))?",
+        }
+        if host in quote_paths and re.fullmatch(quote_paths[host], path):
+            return True
+        title = item.title or ""
+        return bool(re.search(r"(?:股票行情|实时行情|行情走势图|最新价格.*走势图)", title)) and not bool(
+            re.search(r"(?:公告|签订|中标|业绩|处罚|减持|研报|评级|目标价)", title)
+        )
+
+    _CN_ANNOUNCEMENT_HOSTS = ("cninfo.com.cn", "szse.cn", "sse.com.cn", "sse.com")
+
+    @classmethod
+    def _is_official_announcement(cls, item: SearchResult) -> bool:
+        """Require an official document/detail URL, not a homepage or news mirror."""
+        parsed = urlparse(item.url or "")
+        host, path = (parsed.hostname or "").lower(), parsed.path.lower()
+        trusted = any(host == h or host.endswith("." + h) for h in cls._CN_ANNOUNCEMENT_HOSTS)
+        detail = path.endswith(".pdf") or any(
+            token in path for token in ("/finalpage/", "/disclosure/detail", "/announcement/")
+        )
+        return trusted and detail and not cls._is_quote_page(item)
+
+    @staticmethod
+    def _is_research_result(item: SearchResult) -> bool:
+        return bool(re.search(
+            r"研报|研究报告|深度报告|投资评级|首次覆盖|目标价|维持.{0,8}(?:买入|增持|评级)|"
+            r"analyst|price target|rating|research report",
+            " ".join((item.title or "", item.snippet or "")), re.IGNORECASE,
+        ))
+
+    @classmethod
     def _filter_ranked_news_for_context(
         cls,
         response: SearchResponse,
@@ -3441,6 +3490,9 @@ class SearchService:
         dropped_zero_relevance = 0
 
         for item in response.results:
+            if cls._is_quote_page(item):
+                dropped_low_quality += 1
+                continue
             is_official_source = cls._is_trusted_official_news_source(item)
             if (
                 not is_official_source
@@ -4475,7 +4527,7 @@ class SearchService:
                 },
                 {
                     'name': 'market_analysis',
-                    'query': f"{stock_name} 研报 目标价 评级 深度分析",
+                    'query': f"{stock_name} {stock_code} 券商研报 研究报告 目标价 投资评级",
                     'desc': '机构分析',
                     'tavily_topic': None,
                     'strict_freshness': False,
@@ -4554,6 +4606,10 @@ class SearchService:
             
             provider = available_providers[provider_index % len(available_providers)]
             provider_index += 1
+            official_announcements = not is_foreign and not is_index_etf and dim['name'] == 'announcements'
+            query = dim['query']
+            if official_announcements and not isinstance(provider, BochaSearchProvider):
+                query += " (site:cninfo.com.cn OR site:szse.cn OR site:sse.com.cn)"
             
             request_days = (
                 self.ANALYTICAL_INTEL_LOOKBACK_DAYS
@@ -4568,16 +4624,21 @@ class SearchService:
                 request_days,
             )
 
-            if isinstance(provider, TavilySearchProvider) and dim.get('tavily_topic'):
+            if official_announcements and isinstance(provider, BochaSearchProvider):
                 response = provider.search(
-                    dim['query'],
+                    query, max_results=provider_max_results, days=request_days,
+                    include_domains=list(self._CN_ANNOUNCEMENT_HOSTS),
+                )
+            elif isinstance(provider, TavilySearchProvider) and dim.get('tavily_topic'):
+                response = provider.search(
+                    query,
                     max_results=provider_max_results,
                     days=request_days,
                     topic=dim['tavily_topic'],
                 )
             else:
                 response = provider.search(
-                    dim['query'],
+                    query,
                     max_results=provider_max_results,
                     days=request_days,
                 )
@@ -4613,6 +4674,15 @@ class SearchService:
                 filtered_response,
                 log_scope=f"{stock_code}:{provider.name}:{dim['name']}:admission",
             )
+            if official_announcements:
+                filtered_response.results = [r for r in filtered_response.results
+                                             if self._is_official_announcement(r) and r.relevance_category == self._DIRECT_NEWS_CATEGORY]
+            elif not is_foreign and not is_index_etf and dim['name'] == 'market_analysis':
+                filtered_response.results = [r for r in filtered_response.results
+                                             if self._is_research_result(r) and r.relevance_category == self._DIRECT_NEWS_CATEGORY]
+            elif not is_foreign and not is_index_etf and dim['name'] == 'risk_check':
+                filtered_response.results = [r for r in filtered_response.results
+                                             if r.relevance_category == self._DIRECT_NEWS_CATEGORY]
             filtered_response = self._limit_search_response(
                 filtered_response,
                 max_results=target_per_dimension,
@@ -4635,6 +4705,21 @@ class SearchService:
         
         return results
     
+    @classmethod
+    def build_intel_verification(cls, stock_code: str, stock_name: str,
+                                 intel_results: Dict[str, SearchResponse]) -> Dict[str, Any]:
+        """Web search is bounded evidence, never an exhaustive announcement clearance."""
+        if cls._is_foreign_stock(stock_code) or cls.is_index_or_etf(stock_code, stock_name):
+            return {}
+        announcement = intel_results.get('announcements')
+        count = sum(cls._is_official_announcement(r) for r in announcement.results) if announcement and announcement.success else 0
+        return {
+            'status': 'partial' if count else 'insufficient',
+            'official_announcement_count': count,
+            'risk_check_complete': False,
+            'dimensions': {name: {'success': r.success, 'count': len(r.results)} for name, r in intel_results.items()},
+        }
+
     def format_intel_report(self, intel_results: Dict[str, SearchResponse], stock_name: str) -> str:
         """
         格式化情报搜索结果为报告
@@ -4647,6 +4732,7 @@ class SearchService:
             格式化的情报报告文本
         """
         lines = [f"【{stock_name} 情报搜索结果】"]
+        lines.append("核查边界：网页检索只提供已找到的材料，不是完整公告清单。不得把零命中或仅历史财报解读为无利空、无减持或无处罚；未取得官方公告原文时必须标注公告与风险核查不完整。")
         
         # 维度展示顺序
         display_order = ['latest_news', 'announcements', 'market_analysis', 'risk_check', 'earnings', 'industry']
@@ -4675,6 +4761,7 @@ class SearchService:
                 for i, r in enumerate(resp.results[:4], 1):
                     date_str = f" [{r.published_date}]" if r.published_date else ""
                     lines.append(f"  {i}. {r.title}{date_str}")
+                    lines.append(f"     来源: {r.source}；链接: {r.url}")
                     # 如果摘要太短，可能信息量不足
                     snippet = r.snippet[:150] if len(r.snippet) > 20 else r.snippet
                     lines.append(f"     {snippet}...")
@@ -4688,7 +4775,7 @@ class SearchService:
                             relevance_parts.append(f"依据: {'；'.join(r.relevance_reasons[:3])}")
                         lines.append(f"     关联度: {'; '.join(relevance_parts)}")
             else:
-                lines.append("  未找到相关信息")
+                lines.append("  未找到相关信息；证据不足，不能确认不存在相关事件。")
         
         return "\n".join(lines)
     
