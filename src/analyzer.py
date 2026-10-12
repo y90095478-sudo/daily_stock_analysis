@@ -1925,6 +1925,67 @@ def populate_decision_action_fields(
     return result
 
 
+def apply_news_verification_guard(result: AnalysisResult, verification: Dict[str, Any]) -> None:
+    """Keep bounded search evidence from becoming an unsupported risk clearance."""
+    if not verification or verification.get("risk_check_complete") is True:
+        return
+    language = getattr(result, "report_language", "zh")
+    notices = {
+        "zh": "⚠️ 公告与消息面风险核查不完整：仅有已检索到的材料，不能确认无重大利空、减持或处罚。",
+        "en": "⚠️ Announcement and news-risk verification is incomplete; retrieved evidence cannot establish that adverse events are absent.",
+        "ko": "⚠️ 공시 및 뉴스 위험 검증이 불완전합니다. 검색된 자료만으로 악재가 없다고 확인할 수 없습니다.",
+    }
+    notice = notices.get(language, notices["en"])
+    clearance = re.compile(
+        r"(?:无|没有|不存在|未发现|未检索到|未见)[^。；;\n，,]{0,45}(?:利空|减持|处罚|预亏|解禁|风险事件|重大公告)|"
+        r"\b(?:no|without)\s+(?:new\s+|major\s+|material\s+)*(?:negative news|adverse (?:news|events)|penalties|insider selling)|"
+        r"악재가?\s*없|위험이?\s*없", re.IGNORECASE,
+    )
+    qualified = re.compile(r"不能确认|无法确认|不足以|不代表|不能证明|核查不完整|"
+                           r"cannot (?:establish|confirm)|does not (?:establish|mean)|incomplete|불완전", re.IGNORECASE)
+    incomplete = re.compile(r"核查不完整|verification.{0,10}incomplete|불완전", re.IGNORECASE)
+
+    def clean(value):
+        if isinstance(value, str):
+            # Keep real risks after a contrast/comma; replace only the unsupported clause.
+            parts = re.split(r"([。；;\n，,])", value)
+            return "".join(notice.rstrip("。") if clearance.search(part) and not qualified.search(part) else part for part in parts)
+        if isinstance(value, list):
+            return [clean(item) for item in value]
+        if isinstance(value, dict):
+            return {key: clean(item) for key, item in value.items()}
+        return value
+
+    for field_name in ("news_summary", "market_sentiment", "analysis_summary", "key_points", "risk_warning", "buy_reason"):
+        setattr(result, field_name, clean(getattr(result, field_name, "")))
+    result.dashboard = clean(result.dashboard)
+    if isinstance(result.dashboard, dict):
+        intel = result.dashboard.get("intelligence")
+        if not isinstance(intel, dict):
+            intel = {}
+            result.dashboard["intelligence"] = intel
+        latest = intel.get("latest_news", "")
+        if not isinstance(latest, str):
+            latest = ""
+        if not incomplete.search(latest):
+            intel["latest_news"] = notice + ("\n" + latest if latest else "")
+        alerts = intel.get("risk_alerts")
+        if not isinstance(alerts, list):
+            alerts = [alerts] if alerts else []
+        if not any(incomplete.search(str(alert)) for alert in alerts):
+            alerts.insert(0, notice)
+        intel["risk_alerts"] = alerts
+        phase = result.dashboard.get("phase_decision")
+        if not isinstance(phase, dict):
+            phase = {}
+            result.dashboard["phase_decision"] = phase
+        limitations = phase.setdefault("data_limitations", [])
+        if isinstance(limitations, list) and not any(incomplete.search(str(value)) for value in limitations):
+            limitations.append(notice)
+    if not incomplete.search(result.risk_warning):
+        result.risk_warning = notice + ("\n" + result.risk_warning if result.risk_warning else "")
+
+
 class GeminiAnalyzer:
     """
     Gemini AI 分析器
@@ -4990,6 +5051,18 @@ If the stock name shown above is "Stock {code}" or incorrect, **state the correc
 ### ⚠️ 重要：输出正确的股票名称格式
 正确的股票名称格式为“股票名称（股票代码）”，例如“贵州茅台（600519）”。
 如果上方显示的股票名称为"股票{code}"或不正确，请在分析开头**明确输出该股票的正确中文全称**。
+"""
+        verification = context.get("news_verification")
+        if verification:
+            prompt += "\n\n### News / announcement verification scope\n" + json.dumps(verification, ensure_ascii=False)
+        prompt += """
+
+### 消息面证据边界 / News evidence limits
+- 行情快照、报价页、公司主页不能作为新闻、公告或研报证据。
+- 网页搜索不是完整公告核查。零命中、请求失败、历史财报或仅摘要，不得推导“无重大利空”“无减持”“无处罚”。
+- 未取得足够官方原文时，risk_alerts、latest_news 与检查清单须标注“公告与消息面风险核查不完整”，检查项不能使用 ✅ 表示排除风险。
+- 保留已经查到的具体风险及其来源和日期；研报属于机构观点，不能替代公司公告。
+- Quote pages are not news evidence. Limited or empty search results never establish the absence of adverse events; disclose incomplete verification in risk alerts and the checklist, and retain substantiated risks.
 """
         if english and use_legacy_default_prompt:
             prompt += """
