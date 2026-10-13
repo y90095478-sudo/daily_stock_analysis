@@ -1949,7 +1949,8 @@ def apply_news_verification_guard(result: AnalysisResult, verification: Dict[str
         if isinstance(value, str):
             # Keep real risks after a contrast/comma; replace only the unsupported clause.
             parts = re.split(r"([。；;\n，,])", value)
-            return "".join(notice.rstrip("。") if clearance.search(part) and not qualified.search(part) else part for part in parts)
+            return "".join(notice.rstrip("。") if clearance.search(part) and
+                           (not qualified.search(part) or part.lstrip().startswith("✅")) else part for part in parts)
         if isinstance(value, list):
             return [clean(item) for item in value]
         if isinstance(value, dict):
