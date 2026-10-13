@@ -3452,7 +3452,7 @@ class SearchService:
             re.search(r"(?:公告|签订|中标|业绩|处罚|减持|研报|评级|目标价)", title)
         )
 
-    _CN_ANNOUNCEMENT_HOSTS = ("cninfo.com.cn", "szse.cn", "sse.com.cn", "sse.com")
+    _CN_ANNOUNCEMENT_HOSTS = ("cninfo.com.cn", "szse.cn", "sse.com.cn")
 
     @classmethod
     def _is_official_announcement(cls, item: SearchResult) -> bool:
