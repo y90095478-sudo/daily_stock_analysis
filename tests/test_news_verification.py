@@ -80,12 +80,12 @@ class NewsVerificationTests(unittest.TestCase):
         result = AnalysisResult(code="002158", name="汉钟精机", sentiment_score=42, trend_prediction="震荡", operation_advice="观望",
             risk_warning="未发现减持，但已披露监管处罚。技术面跌破均线。",
             dashboard={"intelligence": {"latest_news": "无重大利空", "risk_alerts": ["已披露监管处罚"]},
-                       "battle_plan": {"action_checklist": ["✅ 检查项4：无重大利空"], "sniper_points": {"stop_loss": "22.00"}},
+                       "battle_plan": {"action_checklist": ["✅ 检查项4：无重大利空", "✅ 无重大利空（核查不完整）"], "sniper_points": {"stop_loss": "22.00"}},
                        "phase_decision": {"data_limitations": []}})
         apply_news_verification_guard(result, {"status": "insufficient", "risk_check_complete": False})
         self.assertIn("已披露监管处罚", result.risk_warning)
         self.assertIn("技术面跌破均线", result.risk_warning)
-        self.assertTrue(result.get_checklist()[0].startswith("⚠️"))
+        self.assertTrue(all(check.startswith("⚠️") for check in result.get_checklist()))
         self.assertEqual(result.dashboard["battle_plan"]["sniper_points"]["stop_loss"], "22.00")
         self.assertIn("核查不完整", result.dashboard["intelligence"]["latest_news"])
 
