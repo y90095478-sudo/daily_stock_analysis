@@ -102,6 +102,13 @@ class NewsVerificationTests(unittest.TestCase):
         apply_news_verification_guard(result, {"risk_check_complete": False})
         self.assertEqual(result.risk_warning, original)
 
+    def test_guard_keeps_parenthesized_warning_qualified_before_comma(self):
+        warning = "⚠️ 检查项4：重大利空排查（公告与消息面风险核查不完整，无法核实是否无重大利空）"
+        result = AnalysisResult(code="002158", name="汉钟精机", sentiment_score=42, trend_prediction="震荡", operation_advice="观望",
+                                dashboard={"battle_plan": {"action_checklist": [warning]}})
+        apply_news_verification_guard(result, {"risk_check_complete": False})
+        self.assertEqual(result.get_checklist(), [warning])
+
     def test_english_disclosure_does_not_contain_chinese(self):
         result = AnalysisResult(code="002158", name="Hanbell", sentiment_score=42, trend_prediction="neutral", operation_advice="wait", report_language="en", risk_warning="No major negative news, litigation remains ongoing.")
         apply_news_verification_guard(result, {"risk_check_complete": False})
