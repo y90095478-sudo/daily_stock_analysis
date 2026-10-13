@@ -50,6 +50,15 @@ def _response(results) -> SearchResponse:
     )
 
 
+def _research(title, published_date):
+    return _result(title, published_date, snippet="贵州茅台600519券商研究报告，维持买入评级和目标价。")
+
+
+def _announcement(title, published_date):
+    return _result(title, published_date, snippet="贵州茅台600519公司公告。",
+                   url=f"https://static.cninfo.com.cn/finalpage/{title}.pdf")
+
+
 class SearchNewsFreshnessTestCase(unittest.TestCase):
     """Tests for strategy window and strict published_date filtering."""
 
@@ -1912,7 +1921,7 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         )
         mock_search.side_effect = [
             _response([_result("old", old), _result("fresh", fresh)]),
-            _response([_result("analysis_unknown", None), _result("analysis_dated", analysis_text)]),
+            _response([_research("analysis_unknown", None), _research("analysis_dated", analysis_text)]),
         ]
         with patch("src.search_service.time.sleep"):
             intel = service.search_comprehensive_intel(
@@ -1947,9 +1956,9 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         )
         mock_search.side_effect = [
             _response([_result("latest_news", fresh_text)]),
-            _response([_result("market_analysis", None)]),
+            _response([_research("market_analysis", None)]),
             _response([_result("risk_check", fresh_text)]),
-            _response([_result("announcement_item", fresh_text)]),
+            _response([_announcement("announcement_item", fresh_text)]),
             _response([_result("earnings", None)]),
         ]
 
@@ -1987,12 +1996,12 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         mock_search.side_effect = [
             _response([_result("latest_news", fresh_text)]),
             _response([
-                _result("market_analysis_too_old", very_old),
-                _result("market_analysis_unknown", None),
-                _result("market_analysis_in_window", in_window),
+                _research("market_analysis_too_old", very_old),
+                _research("market_analysis_unknown", None),
+                _research("market_analysis_in_window", in_window),
             ]),
             _response([_result("risk_check", fresh_text)]),
-            _response([_result("announcement_item", fresh_text)]),
+            _response([_announcement("announcement_item", fresh_text)]),
             _response([
                 _result("earnings_too_old", very_old),
                 _result("earnings_unknown", None),
@@ -2032,7 +2041,7 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         )
         mock_search.side_effect = [
             _response([_result("latest_news", fresh_text)]),
-            _response([_result("market_analysis_unknown", None)]),
+            _response([_research("market_analysis_unknown", None)]),
             _response([_result("risk_unknown", None)]),
         ]
 
@@ -2061,7 +2070,7 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         )
         mock_search.side_effect = [
             _response([_result("latest_news", fresh_text)]),
-            _response([_result("market_analysis_unknown", None)]),
+            _response([_research("market_analysis_unknown", None)]),
             _response([_result("risk_unknown", None)]),
         ]
 
@@ -2088,9 +2097,9 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         )
         mock_search.side_effect = [
             _response([_result("latest_news", fresh_text)]),
-            _response([_result("market_analysis", None)]),
+            _response([_research("market_analysis", None)]),
             _response([_result("risk_check", fresh_text)]),
-            _response([_result("announcement_item", fresh_text)]),
+            _response([_announcement("announcement_item", fresh_text)]),
         ]
 
         with patch("src.search_service.time.sleep"):
@@ -2118,9 +2127,9 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         )
         mock_search.side_effect = [
             _response([_result("latest_news", fresh_text)]),
-            _response([_result("market_analysis", None)]),
+            _response([_research("market_analysis", None)]),
             _response([_result("risk_check", fresh_text)]),
-            _response([_result("old_announcement", old), _result("fresh_announcement", fresh_text)]),
+            _response([_announcement("old_announcement", old), _announcement("fresh_announcement", fresh_text)]),
         ]
 
         with patch("src.search_service.time.sleep"):
@@ -2147,9 +2156,9 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         )
         mock_search.side_effect = [
             _response([_result("latest_news", fresh_text)]),
-            _response([_result("market_analysis", None)]),
+            _response([_research("market_analysis", None)]),
             _response([_result("risk_check", None)]),
-            _response([_result("announcement_item", fresh_text)]),
+            _response([_announcement("announcement_item", fresh_text)]),
         ]
 
         with patch("src.search_service.time.sleep"):
