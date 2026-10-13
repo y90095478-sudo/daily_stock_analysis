@@ -332,6 +332,10 @@ For the notification baseline, diagnostics, and deployment notes, see [Notificat
 
 ### Search Service Configuration
 
+News evidence and announcement verification: quote pages are excluded from report evidence. A-share announcement searches prioritize CNINFO and exchange domains; Bocha uses its `include` parameter. Only company-matched official detail/PDF documents qualify, not homepages or media mirrors. Research searches retain analyst reports, ratings and target-price material; company risk searches reject unrelated-stock posts.
+
+Web search is not an exhaustive announcement audit. Failed/empty searches, historical earnings and snippets do not establish the absence of adverse events. Reports disclose incomplete announcement/news-risk verification, correct unsupported clearance claims and green checklist items, and preserve substantiated risks. Context includes source, date and URL. Missing official results stay empty rather than being filled with quote pages.
+
 | Variable | Description | Required |
 |--------|------|:----:|
 | `ANSPIRE_API_KEYS` | Anspire Open API Key (shared with search and LLM fallback examples; availability depends on account/model entitlement, and can effectively enhance A-share analysis) | Recommended |
