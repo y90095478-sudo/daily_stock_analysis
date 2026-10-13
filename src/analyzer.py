@@ -1948,9 +1948,18 @@ def apply_news_verification_guard(result: AnalysisResult, verification: Dict[str
     def clean(value):
         if isinstance(value, str):
             # Keep real risks after a contrast/comma; replace only the unsupported clause.
-            parts = re.split(r"([。；;\n，,])", value)
-            return "".join(notice.rstrip("。") if clearance.search(part) and
-                           (not qualified.search(part) or part.lstrip().startswith("✅")) else part for part in parts)
+            sentences = re.split(r"([。；;\n])", value)
+            cleaned = []
+            for sentence in sentences:
+                if qualified.search(sentence):
+                    # A qualifier before a comma/parenthesis applies to the whole sentence.
+                    # Preserve it intact, except a green risk-clearance checklist item.
+                    cleaned.append(notice.rstrip("。") if sentence.lstrip().startswith("✅")
+                                   and clearance.search(sentence) else sentence)
+                    continue
+                parts = re.split(r"([，,])", sentence)
+                cleaned.append("".join(notice.rstrip("。") if clearance.search(part) else part for part in parts))
+            return "".join(cleaned)
         if isinstance(value, list):
             return [clean(item) for item in value]
         if isinstance(value, dict):
